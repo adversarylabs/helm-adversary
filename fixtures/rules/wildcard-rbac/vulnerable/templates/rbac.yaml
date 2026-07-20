@@ -1,0 +1,4 @@
+kind: ClusterRole
+rules:
+  - resources: ['*']
+    verbs: ['*']

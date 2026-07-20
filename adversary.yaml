@@ -1,0 +1,33 @@
+name: helm
+version: 0.0.0
+description: Reviews Helm charts for excessive RBAC, mutable images, and unbounded dependencies.
+
+triggers:
+  manual: true
+  files_changed:
+    - "Chart.yaml"
+    - "**/Chart.yaml"
+    - "values.yaml"
+    - "**/values.yaml"
+    - "templates/*.yaml"
+    - "**/templates/*.yaml"
+
+runtime:
+  name: node
+  version: "22"
+  command:
+    - dist/index.js
+
+permissions:
+  enforcement: advisory
+  filesystem:
+    read:
+      - .
+    write:
+      - .adversary/results
+  network: false
+  environment:
+    allow: []
+
+findings:
+  format: adversary.review.v1
