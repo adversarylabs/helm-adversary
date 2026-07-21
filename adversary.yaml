@@ -12,6 +12,15 @@ triggers:
     - "templates/*.yaml"
     - "**/templates/*.yaml"
 
+detection:
+  files:
+    - "Chart.yaml"
+    - "**/Chart.yaml"
+    - "values.yaml"
+    - "**/values.yaml"
+    - "templates/*.yaml"
+    - "**/templates/*.yaml"
+
 runtime:
   name: node
   version: "22"
