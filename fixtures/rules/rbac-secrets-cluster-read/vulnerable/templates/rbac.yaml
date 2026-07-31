@@ -1,8 +1,8 @@
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
-  name: {{ .Release.Name }}
+  name: reader
 rules:
   - apiGroups: [""]
-    resources: ["configmaps"]
+    resources: ["secrets"]
     verbs: ["get", "list"]

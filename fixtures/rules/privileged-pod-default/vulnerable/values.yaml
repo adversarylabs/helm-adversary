@@ -1,0 +1,5 @@
+securityContext:
+  privileged: true
+image:
+  repository: app
+  tag: "1.0.0"

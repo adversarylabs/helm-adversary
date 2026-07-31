@@ -1,0 +1,6 @@
+securityContext:
+  privileged: false
+  runAsNonRoot: true
+image:
+  repository: app
+  tag: "1.0.0"

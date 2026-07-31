@@ -14,14 +14,18 @@ export interface AdversarySpec { id: string; displayName: string; description: s
 export const spec = {
   "id": "helm",
   "displayName": "Helm",
-  "description": "Reviews Helm charts for excessive RBAC, mutable images, and unbounded dependencies.",
+  "description": "Reviews Helm charts for excessive RBAC, privileged defaults, mutable images, and dependency pinning.",
   "files": [
     "Chart.yaml",
     "**/Chart.yaml",
+    "Chart.lock",
+    "**/Chart.lock",
     "values.yaml",
     "**/values.yaml",
     "templates/*.yaml",
-    "**/templates/*.yaml"
+    "**/templates/*.yaml",
+    "templates/*.yml",
+    "**/templates/*.yml"
   ],
   "rules": [
     {
@@ -29,24 +33,86 @@ export const spec = {
       "title": "Chart grants wildcard RBAC permissions",
       "summary": "Chart grants wildcard RBAC permissions",
       "category": "permissions",
-      "severity": "high",
+      "severity": "critical",
       "confidence": "high",
-      "whyItMatters": "Chart grants wildcard RBAC permissions weakens an important permissions boundary.",
-      "impact": "The repository may behave insecurely, unreliably, or differently from the reviewed configuration.",
+      "whyItMatters": "Wildcard RBAC grants near-admin API power to the release SA.",
+      "impact": "Compromised pod escalates to broad cluster or namespace control.",
       "recommendation": "Replace wildcards with exact namespaced resources and verbs.",
       "complexity": "small",
       "tags": [
         "permissions",
-        "wildcard-rbac"
+        "rbac"
       ],
       "match": {
         "kind": "content",
         "files": [
           "templates/*.yaml",
+          "**/templates/*.yaml",
+          "templates/*.yml",
+          "**/templates/*.yml"
+        ],
+        "pattern": {
+          "pattern": "(?:verbs|resources):\\s*\\[[^\\]]*[\\\"']?\\*[\\\"']?",
+          "flags": "i"
+        },
+        "requires": []
+      }
+    },
+    {
+      "id": "helm.cluster-admin-binding",
+      "title": "Chart binds workloads to cluster-admin",
+      "summary": "Chart binds workloads to cluster-admin",
+      "category": "permissions",
+      "severity": "critical",
+      "confidence": "high",
+      "whyItMatters": "Any pod using the SA controls the cluster.",
+      "impact": "Full cluster takeover from the release.",
+      "recommendation": "Ship a minimal Role/ClusterRole for the app only.",
+      "complexity": "small",
+      "tags": [
+        "permissions",
+        "cluster-admin"
+      ],
+      "match": {
+        "kind": "content",
+        "files": [
+          "templates/*.yaml",
+          "**/templates/*.yaml",
+          "templates/*.yml",
+          "**/templates/*.yml"
+        ],
+        "pattern": {
+          "pattern": "kind:\\s*ClusterRoleBinding[\\s\\S]{0,300}name:\\s*cluster-admin",
+          "flags": "i"
+        },
+        "requires": []
+      }
+    },
+    {
+      "id": "helm.privileged-pod-default",
+      "title": "Chart defaults privileged or docker.sock hostPath",
+      "summary": "Chart defaults privileged or docker.sock hostPath",
+      "category": "security",
+      "severity": "critical",
+      "confidence": "high",
+      "whyItMatters": "Default install becomes host-compromising.",
+      "impact": "Host root via privileged container or docker socket.",
+      "recommendation": "Secure defaults; require explicit opt-in for privileged.",
+      "complexity": "small",
+      "tags": [
+        "security",
+        "privileged"
+      ],
+      "match": {
+        "kind": "content",
+        "files": [
+          "values.yaml",
+          "**/values.yaml",
+          "templates/*.yaml",
           "**/templates/*.yaml"
         ],
         "pattern": {
-          "pattern": "(?:verbs|resources):\\s*\\[[^\\]]*[\"']?\\*[\"']?",
+          "pattern": "privileged:\\s*true|/var/run/docker\\.sock",
           "flags": "i"
         },
         "requires": []
@@ -57,15 +123,15 @@ export const spec = {
       "title": "Chart defaults an image tag to latest",
       "summary": "Chart defaults an image tag to latest",
       "category": "supply-chain",
-      "severity": "medium",
+      "severity": "high",
       "confidence": "high",
-      "whyItMatters": "Chart defaults an image tag to latest weakens an important supply-chain boundary.",
-      "impact": "The repository may behave insecurely, unreliably, or differently from the reviewed configuration.",
+      "whyItMatters": "Floating tags make installs non-reproducible.",
+      "impact": "Unexpected image content on upgrade/redeploy.",
       "recommendation": "Default to a release version or digest.",
       "complexity": "small",
       "tags": [
         "supply-chain",
-        "latest-default"
+        "image"
       ],
       "match": {
         "kind": "content",
@@ -74,7 +140,35 @@ export const spec = {
           "**/values.yaml"
         ],
         "pattern": {
-          "pattern": "(?:tag|imageTag):\\s*[\"']?latest",
+          "pattern": "(?:tag|imageTag):\\s*[\\\"']?latest\\b",
+          "flags": "i"
+        },
+        "requires": []
+      }
+    },
+    {
+      "id": "helm.secrets-in-values",
+      "title": "Default values contain credential-like literals",
+      "summary": "Default values contain credential-like literals",
+      "category": "secrets",
+      "severity": "high",
+      "confidence": "high",
+      "whyItMatters": "Charts are copied; defaults become committed secrets.",
+      "impact": "Credential leakage via values.yaml.",
+      "recommendation": "Use existingSecret; never ship real credentials as defaults.",
+      "complexity": "small",
+      "tags": [
+        "secrets",
+        "values"
+      ],
+      "match": {
+        "kind": "content",
+        "files": [
+          "values.yaml",
+          "**/values.yaml"
+        ],
+        "pattern": {
+          "pattern": "(?:password|apiKey|api_key|secret|token|privateKey):\\s*[\\\"'][A-Za-z0-9/+=_\\-]{12,}[\\\"']",
           "flags": "i"
         },
         "requires": []
@@ -82,18 +176,18 @@ export const spec = {
     },
     {
       "id": "helm.unbounded-dependency",
-      "title": "Chart dependency uses an unbounded version",
-      "summary": "Chart dependency uses an unbounded version",
+      "title": "Chart dependency missing version or Chart.lock",
+      "summary": "Chart dependency missing version or Chart.lock",
       "category": "supply-chain",
-      "severity": "medium",
+      "severity": "high",
       "confidence": "high",
-      "whyItMatters": "Chart dependency uses an unbounded version weakens an important supply-chain boundary.",
-      "impact": "The repository may behave insecurely, unreliably, or differently from the reviewed configuration.",
+      "whyItMatters": "Dependent charts can move under you.",
+      "impact": "Non-reproducible chart installs.",
       "recommendation": "Pin chart dependencies and commit Chart.lock.",
       "complexity": "small",
       "tags": [
         "supply-chain",
-        "unbounded-dependency"
+        "deps"
       ],
       "match": {
         "kind": "content",
@@ -102,7 +196,63 @@ export const spec = {
           "**/Chart.yaml"
         ],
         "pattern": {
-          "pattern": "version:\\s*[\"']?(?:\\*|>=|~|\\^|latest)",
+          "pattern": "version:\\s*[\\\"']?\\*",
+          "flags": "i"
+        },
+        "requires": []
+      }
+    },
+    {
+      "id": "helm.rbac-secrets-cluster-read",
+      "title": "ClusterRole can read secrets cluster-wide",
+      "summary": "ClusterRole can read secrets cluster-wide",
+      "category": "permissions",
+      "severity": "high",
+      "confidence": "high",
+      "whyItMatters": "Cluster-wide secrets read is effectively takeover of credentials.",
+      "impact": "Every SA token and secret becomes readable.",
+      "recommendation": "Use a namespaced Role or resourceNames restrictions.",
+      "complexity": "small",
+      "tags": [
+        "permissions",
+        "secrets"
+      ],
+      "match": {
+        "kind": "content",
+        "files": [
+          "templates/*.yaml",
+          "**/templates/*.yaml"
+        ],
+        "pattern": {
+          "pattern": "kind:\\s*ClusterRole[\\s\\S]{0,400}resources:\\s*\\[[^\\]]*secrets[^\\]]*\\][\\s\\S]{0,120}verbs:\\s*\\[[^\\]]*(?:get|list|watch|\\*)",
+          "flags": "i"
+        },
+        "requires": []
+      }
+    },
+    {
+      "id": "helm.hook-privileged",
+      "title": "Helm hook runs privileged",
+      "summary": "Helm hook runs privileged",
+      "category": "security",
+      "severity": "medium",
+      "confidence": "high",
+      "whyItMatters": "Hooks still execute with release identity.",
+      "impact": "Privileged hook pods compromise the host.",
+      "recommendation": "Harden hook pods like any workload.",
+      "complexity": "small",
+      "tags": [
+        "security",
+        "hooks"
+      ],
+      "match": {
+        "kind": "content",
+        "files": [
+          "templates/*.yaml",
+          "**/templates/*.yaml"
+        ],
+        "pattern": {
+          "pattern": "helm\\.sh/hook[\\\"']?[^\\n]*\\n[\\s\\S]{0,400}privileged:\\s*true",
           "flags": "i"
         },
         "requires": []

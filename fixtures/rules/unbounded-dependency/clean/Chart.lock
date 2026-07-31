@@ -1,7 +1,6 @@
-apiVersion: v2
-name: app
-version: 0.1.0
 dependencies:
   - name: postgresql
+    version: 15.5.0
     repository: https://charts.bitnami.com/bitnami
-    version: "*"
+digest: sha256:abc
+generated: "2024-01-01T00:00:00Z"

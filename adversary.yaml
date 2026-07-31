@@ -1,6 +1,6 @@
 name: helm
-version: 0.0.3
-description: Reviews Helm charts for excessive RBAC, mutable images, and unbounded dependencies.
+version: 0.0.4
+description: Reviews Helm charts for excessive RBAC, privileged defaults, mutable images, and dependency pinning.
 
 triggers:
   manual: true

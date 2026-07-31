@@ -5,9 +5,9 @@ import { createApp } from "../src/index.ts";
 
 const fixture = (name: string) => new URL(`../fixtures/${name}`, import.meta.url).pathname;
 const review = (name: string, raw = false) => createApp().run({ input: { source: { path: fixture(name) } }, includeRawObservations: raw });
-const ruleCases = [{"key":"wildcard-rbac","id":"helm.wildcard-rbac"},{"key":"latest-default","id":"helm.latest-default"},{"key":"unbounded-dependency","id":"helm.unbounded-dependency"}];
+const ruleCases = [{"key": "wildcard-rbac", "id": "helm.wildcard-rbac"}, {"key": "cluster-admin-binding", "id": "helm.cluster-admin-binding"}, {"key": "privileged-pod-default", "id": "helm.privileged-pod-default"}, {"key": "latest-default", "id": "helm.latest-default"}, {"key": "secrets-in-values", "id": "helm.secrets-in-values"}, {"key": "unbounded-dependency", "id": "helm.unbounded-dependency"}, {"key": "rbac-secrets-cluster-read", "id": "helm.rbac-secrets-cluster-read"}, {"key": "hook-privileged", "id": "helm.hook-privileged"}];
 
-test("every initial rule has focused vulnerable and clean coverage", async () => {
+test("every shipped rule has focused vulnerable and clean coverage", async () => {
   for (const rule of ruleCases) {
     const vulnerable = await review(`rules/${rule.key}/vulnerable`, true);
     assert.equal(vulnerable.findings.some((finding) => finding.ruleId === rule.id), true, `${rule.id} did not detect its vulnerable fixture`);
