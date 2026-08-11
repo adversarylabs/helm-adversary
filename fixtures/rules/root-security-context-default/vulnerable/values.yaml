@@ -1,0 +1,10 @@
+toolbox:
+  containerSecurityContext:
+    runAsNonRoot: false
+    runAsUser: 0
+    runAsGroup: 0
+
+metrics:
+  containerSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532

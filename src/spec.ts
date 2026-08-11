@@ -3,11 +3,12 @@ import { type Confidence, type Severity } from "@adversarylabs/sdk";
 export interface MatchExpression { pattern: string; flags: string }
 interface ContentMatch { kind: "content"; files: string[]; pattern: MatchExpression; requires: MatchExpression[] }
 interface MissingContentMatch { kind: "missing-content"; files: string[]; trigger: MatchExpression; required: MatchExpression }
+interface IndentedBlockContentMatch { kind: "indented-block-content"; files: string[]; blockStart: MatchExpression; pattern: MatchExpression; requires: MatchExpression[] }
 interface MissingFileMatch { kind: "missing-file"; triggerFiles: string[]; requiredFiles: string[] }
 export interface RuleSpec {
   id: string; title: string; summary: string; category: string; severity: Severity; confidence: Confidence;
   whyItMatters: string; impact: string; recommendation: string; complexity: "trivial" | "small" | "medium" | "large"; tags: string[];
-  match: ContentMatch | MissingContentMatch | MissingFileMatch;
+  match: ContentMatch | MissingContentMatch | IndentedBlockContentMatch | MissingFileMatch;
 }
 export interface AdversarySpec { id: string; displayName: string; description: string; files: string[]; rules: RuleSpec[] }
 
@@ -141,6 +142,39 @@ export const spec = {
         ],
         "pattern": {
           "pattern": "(?:tag|imageTag):\\s*[\\\"']?latest\\b",
+          "flags": "i"
+        },
+        "requires": []
+      }
+    },
+    {
+      "id": "helm.root-security-context-default",
+      "title": "Chart defaults containers to run as root",
+      "summary": "Chart defaults containers to run as root",
+      "category": "security",
+      "severity": "high",
+      "confidence": "high",
+      "whyItMatters": "A root-enabling security context in values.yaml applies to chart installations unless every operator overrides it.",
+      "impact": "A compromised workload runs with greater privileges and has a larger container-escape blast radius.",
+      "recommendation": "Default to runAsNonRoot: true and a non-zero user; require an explicit opt-in for components that must run as root.",
+      "complexity": "small",
+      "tags": [
+        "security",
+        "root",
+        "defaults"
+      ],
+      "match": {
+        "kind": "indented-block-content",
+        "files": [
+          "values.yaml",
+          "**/values.yaml"
+        ],
+        "blockStart": {
+          "pattern": "^[ \\t]*(?:(?:container|pod)SecurityContext|securityContext):\\s*$",
+          "flags": "im"
+        },
+        "pattern": {
+          "pattern": "(?:runAsUser:\\s*0\\b|runAsNonRoot:\\s*false\\b)",
           "flags": "i"
         },
         "requires": []

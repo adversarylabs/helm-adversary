@@ -15,6 +15,13 @@ interface MissingContentMatch {
     trigger: MatchExpression;
     required: MatchExpression;
 }
+interface IndentedBlockContentMatch {
+    kind: "indented-block-content";
+    files: string[];
+    blockStart: MatchExpression;
+    pattern: MatchExpression;
+    requires: MatchExpression[];
+}
 interface MissingFileMatch {
     kind: "missing-file";
     triggerFiles: string[];
@@ -32,7 +39,7 @@ export interface RuleSpec {
     recommendation: string;
     complexity: "trivial" | "small" | "medium" | "large";
     tags: string[];
-    match: ContentMatch | MissingContentMatch | MissingFileMatch;
+    match: ContentMatch | MissingContentMatch | IndentedBlockContentMatch | MissingFileMatch;
 }
 export interface AdversarySpec {
     id: string;
@@ -126,6 +133,31 @@ export declare const spec: {
             readonly files: ["values.yaml", "**/values.yaml"];
             readonly pattern: {
                 readonly pattern: "(?:tag|imageTag):\\s*[\\\"']?latest\\b";
+                readonly flags: "i";
+            };
+            readonly requires: [];
+        };
+    }, {
+        readonly id: "helm.root-security-context-default";
+        readonly title: "Chart defaults containers to run as root";
+        readonly summary: "Chart defaults containers to run as root";
+        readonly category: "security";
+        readonly severity: "high";
+        readonly confidence: "high";
+        readonly whyItMatters: "A root-enabling security context in values.yaml applies to chart installations unless every operator overrides it.";
+        readonly impact: "A compromised workload runs with greater privileges and has a larger container-escape blast radius.";
+        readonly recommendation: "Default to runAsNonRoot: true and a non-zero user; require an explicit opt-in for components that must run as root.";
+        readonly complexity: "small";
+        readonly tags: ["security", "root", "defaults"];
+        readonly match: {
+            readonly kind: "indented-block-content";
+            readonly files: ["values.yaml", "**/values.yaml"];
+            readonly blockStart: {
+                readonly pattern: "^[ \\t]*(?:(?:container|pod)SecurityContext|securityContext):\\s*$";
+                readonly flags: "im";
+            };
+            readonly pattern: {
+                readonly pattern: "(?:runAsUser:\\s*0\\b|runAsNonRoot:\\s*false\\b)";
                 readonly flags: "i";
             };
             readonly requires: [];
