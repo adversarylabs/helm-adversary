@@ -1,0 +1,15 @@
+controller:
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+
+# A narrowly scoped administrative init container is an explicit opt-in,
+# not the chart-wide workload security-context default covered by this rule.
+initContainerSecurityContext:
+  runAsNonRoot: false
+  runAsUser: 0

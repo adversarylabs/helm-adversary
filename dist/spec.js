@@ -134,6 +134,39 @@ export const spec = {
             }
         },
         {
+            "id": "helm.root-security-context-default",
+            "title": "Chart defaults containers to run as root",
+            "summary": "Chart defaults containers to run as root",
+            "category": "security",
+            "severity": "high",
+            "confidence": "high",
+            "whyItMatters": "A root-enabling security context in values.yaml applies to chart installations unless every operator overrides it.",
+            "impact": "A compromised workload runs with greater privileges and has a larger container-escape blast radius.",
+            "recommendation": "Default to runAsNonRoot: true and a non-zero user; require an explicit opt-in for components that must run as root.",
+            "complexity": "small",
+            "tags": [
+                "security",
+                "root",
+                "defaults"
+            ],
+            "match": {
+                "kind": "indented-block-content",
+                "files": [
+                    "values.yaml",
+                    "**/values.yaml"
+                ],
+                "blockStart": {
+                    "pattern": "^[ \\t]*(?:(?:container|pod)SecurityContext|securityContext):\\s*$",
+                    "flags": "im"
+                },
+                "pattern": {
+                    "pattern": "(?:runAsUser:\\s*0\\b|runAsNonRoot:\\s*false\\b)",
+                    "flags": "i"
+                },
+                "requires": []
+            }
+        },
+        {
             "id": "helm.secrets-in-values",
             "title": "Default values contain credential-like literals",
             "summary": "Default values contain credential-like literals",
