@@ -114,6 +114,17 @@ Public grounding: Helm RBAC docs, [Prisma “wildcard use is not minimized in Ro
 
 ## Medium
 
+### `helm.capabilities-add-without-drop-all`
+
+| | |
+| --- | --- |
+| **What** | A chart explicitly adds Linux capabilities without dropping the runtime defaults |
+| **Why** | The container receives both the requested capability and the runtime default capability set, which is broader than the chart communicates |
+| **Looks for** | `capabilities` blocks in changed values or templates with non-empty `add` entries and no `drop: ["ALL"]` in that same block |
+| **Stays quiet when** | The block drops `ALL`; only drops capabilities; or capability text appears only in comments |
+| **Public examples** | Istio PR #53478 restored `drop: ALL` after maintainer review when explicit capabilities remained |
+| **Remediation** | Drop `ALL`, then add back only the capabilities the workload requires |
+
 ### `helm.hook-privileged`
 
 | | |

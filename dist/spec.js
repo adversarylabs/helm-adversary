@@ -277,6 +277,46 @@ export const spec = {
                 },
                 "requires": []
             }
+        },
+        {
+            "id": "helm.capabilities-add-without-drop-all",
+            "title": "Chart adds Linux capabilities without dropping runtime defaults",
+            "summary": "Chart adds Linux capabilities without dropping runtime defaults",
+            "category": "security",
+            "severity": "medium",
+            "confidence": "high",
+            "whyItMatters": "Adding a capability without first dropping ALL preserves the container runtime default capability set as well as the requested capability.",
+            "impact": "The rendered workload receives broader kernel privileges than the chart configuration communicates.",
+            "recommendation": "Add drop: [\"ALL\"] in the same capabilities block, then add back only the capabilities the workload requires.",
+            "complexity": "small",
+            "tags": [
+                "security",
+                "capabilities",
+                "defaults"
+            ],
+            "match": {
+                "kind": "indented-block-missing-content",
+                "files": [
+                    "values.yaml",
+                    "**/values.yaml",
+                    "templates/*.yaml",
+                    "**/templates/*.yaml",
+                    "templates/*.yml",
+                    "**/templates/*.yml"
+                ],
+                "blockStart": {
+                    "pattern": "^[ \\t]*capabilities:\\s*$",
+                    "flags": "im"
+                },
+                "trigger": {
+                    "pattern": "^[ \\t]*add:\\s*(?:\\[[^\\]\\r\\n]*[A-Za-z0-9_][^\\]\\r\\n]*\\]|(?:\\r?\\n[ \\t]+-[ \\t]*[\\\"']?[A-Za-z0-9_]))",
+                    "flags": "im"
+                },
+                "required": {
+                    "pattern": "^[ \\t]*drop:\\s*(?:\\[[^\\]\\r\\n]*[\\\"']?ALL[\\\"']?[^\\]\\r\\n]*\\]|(?:\\r?\\n[ \\t]+-[ \\t]*[\\\"']?ALL[\\\"']?[ \\t]*(?:#.*)?$))",
+                    "flags": "im"
+                }
+            }
         }
     ]
 };

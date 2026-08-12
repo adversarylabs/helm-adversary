@@ -57,6 +57,23 @@ function evaluate(rule, sources, allPaths) {
             return [{ rule, file: file.path, ...location, label: rule.title, data: { matchedPattern: match.pattern.pattern } }];
         }));
     }
+    if (match.kind === "indented-block-missing-content") {
+        return matchingSources.flatMap((file) => extractIndentedBlocks(file.source, match.blockStart).flatMap((block) => {
+            if (!test(block.source, match.trigger) || test(block.source, match.required))
+                return [];
+            const matched = new RegExp(match.trigger.pattern, match.trigger.flags).exec(block.source);
+            if (matched?.index === undefined)
+                return [];
+            const location = locateFromIndex(file.source, block.start + matched.index);
+            return [{
+                    rule,
+                    file: file.path,
+                    ...location,
+                    label: rule.title,
+                    data: { requiredPattern: match.required.pattern },
+                }];
+        }));
+    }
     return matchingSources.flatMap((file) => {
         if (!match.requires.every((pattern) => test(file.source, pattern)))
             return [];

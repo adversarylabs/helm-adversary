@@ -1,0 +1,21 @@
+sidecar:
+  securityContext:
+    capabilities:
+      drop: ["ALL"]
+      add: ["NET_ADMIN"]
+
+worker:
+  securityContext:
+    capabilities:
+      drop:
+        - ALL
+      add:
+        - NET_BIND_SERVICE
+
+restricted:
+  securityContext:
+    capabilities:
+      drop:
+        - NET_RAW
+
+# Documentation example only: capabilities: add: ["SYS_ADMIN"]
