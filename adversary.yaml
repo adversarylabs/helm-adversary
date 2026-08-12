@@ -1,5 +1,5 @@
 name: container/helm
-version: 0.0.8
+version: 0.0.9
 description: Reviews Helm charts for excessive RBAC, privileged defaults, mutable images, and dependency pinning.
 
 triggers:
