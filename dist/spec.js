@@ -279,6 +279,33 @@ export const spec = {
             }
         },
         {
+            "id": "helm.selector-label-override",
+            "title": "Custom pod labels can override workload selectors",
+            "summary": "Custom pod labels can override workload selectors",
+            "category": "correctness",
+            "severity": "high",
+            "confidence": "high",
+            "whyItMatters": "Rendering selector labels and user-controlled pod labels separately can create duplicate YAML keys or change a selector key only on the pod template.",
+            "impact": "The rendered workload can be rejected or its pod template can stop matching the immutable workload selector.",
+            "recommendation": "Merge custom and selector label maps before rendering them, with selector labels taking precedence.",
+            "complexity": "small",
+            "tags": [
+                "helm",
+                "kubernetes",
+                "selectors",
+                "labels"
+            ],
+            "match": {
+                "kind": "selector-label-override",
+                "files": [
+                    "templates/*.yaml",
+                    "**/templates/*.yaml",
+                    "templates/*.yml",
+                    "**/templates/*.yml"
+                ]
+            }
+        },
+        {
             "id": "helm.capabilities-add-without-drop-all",
             "title": "Chart adds Linux capabilities without dropping runtime defaults",
             "summary": "Chart adds Linux capabilities without dropping runtime defaults",

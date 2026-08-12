@@ -1,0 +1,9 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: example
+spec:
+  template:
+    metadata:
+      labels:
+        {{- merge (fromYaml (include "example.selectorLabels" .)) (.Values.podLabels | default dict) | toYaml | nindent 8 }}

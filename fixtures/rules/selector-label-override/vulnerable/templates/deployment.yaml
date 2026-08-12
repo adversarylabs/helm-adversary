@@ -1,0 +1,15 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: example
+spec:
+  selector:
+    matchLabels:
+      {{ include "example.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{ include "example.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podLabels }}
+        {{ toYaml . | nindent 8 }}
+      {{- end }}

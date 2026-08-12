@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: example
+  labels:
+    {{ include "example.commonLabels" . | nindent 4 }}
+    {{ toYaml .Values.extraLabels | nindent 4 }}

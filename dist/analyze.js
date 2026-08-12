@@ -36,6 +36,9 @@ function evaluate(rule, sources, allPaths) {
         return [{ rule, file: triggers[0] ?? ".", line: 1, snippet: triggers[0] ?? "", label: rule.title, data: { triggerFiles: triggers.slice(0, 10), requiredFiles: match.requiredFiles } }];
     }
     const matchingSources = sources.filter((file) => match.files.some((glob) => matchesGlob(file.path, glob)));
+    if (match.kind === "selector-label-override") {
+        return matchingSources.flatMap((file) => findSelectorLabelOverrides(rule, file));
+    }
     if (match.kind === "missing-content") {
         return matchingSources.flatMap((file) => {
             if (!test(file.source, match.trigger) || test(file.source, match.required))
@@ -82,6 +85,41 @@ function evaluate(rule, sources, allPaths) {
             return [];
         return [{ rule, file: file.path, ...location, label: rule.title, data: { matchedPattern: match.pattern.pattern } }];
     });
+}
+function findSelectorLabelOverrides(rule, file) {
+    const lines = file.source.split(/\r?\n/);
+    const detections = [];
+    for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index] ?? "";
+        if (!/\binclude\s+["'][^"']*selectorLabels[^"']*["']/i.test(line))
+            continue;
+        let labelsIndex = -1;
+        for (let candidate = index; candidate >= Math.max(0, index - 3); candidate -= 1) {
+            if (/^\s*labels:\s*$/.test(lines[candidate] ?? "")) {
+                labelsIndex = candidate;
+                break;
+            }
+        }
+        if (labelsIndex < 0)
+            continue;
+        const end = Math.min(lines.length, index + 9);
+        const region = lines.slice(labelsIndex, end).join("\n");
+        if (!/\bpodLabels\b/.test(region))
+            continue;
+        if (!/\btoYaml\b/.test(region))
+            continue;
+        if (/\bmerge(?:Overwrite)?\s*\(/.test(region))
+            continue;
+        detections.push({
+            rule,
+            file: file.path,
+            line: index + 1,
+            snippet: line.trim().slice(0, 240),
+            label: rule.title,
+            data: { selectorHelper: line.trim() },
+        });
+    }
+    return detections;
 }
 function test(source, expression) {
     return new RegExp(expression.pattern, expression.flags).test(source);
