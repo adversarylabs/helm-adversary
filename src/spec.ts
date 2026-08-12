@@ -6,10 +6,11 @@ interface MissingContentMatch { kind: "missing-content"; files: string[]; trigge
 interface IndentedBlockContentMatch { kind: "indented-block-content"; files: string[]; blockStart: MatchExpression; pattern: MatchExpression; requires: MatchExpression[] }
 interface IndentedBlockMissingContentMatch { kind: "indented-block-missing-content"; files: string[]; blockStart: MatchExpression; trigger: MatchExpression; required: MatchExpression }
 interface MissingFileMatch { kind: "missing-file"; triggerFiles: string[]; requiredFiles: string[] }
+interface SelectorLabelOverrideMatch { kind: "selector-label-override"; files: string[] }
 export interface RuleSpec {
   id: string; title: string; summary: string; category: string; severity: Severity; confidence: Confidence;
   whyItMatters: string; impact: string; recommendation: string; complexity: "trivial" | "small" | "medium" | "large"; tags: string[];
-  match: ContentMatch | MissingContentMatch | IndentedBlockContentMatch | IndentedBlockMissingContentMatch | MissingFileMatch;
+  match: ContentMatch | MissingContentMatch | IndentedBlockContentMatch | IndentedBlockMissingContentMatch | MissingFileMatch | SelectorLabelOverrideMatch;
 }
 export interface AdversarySpec { id: string; displayName: string; description: string; files: string[]; rules: RuleSpec[] }
 
@@ -291,6 +292,33 @@ export const spec = {
           "flags": "i"
         },
         "requires": []
+      }
+    },
+    {
+      "id": "helm.selector-label-override",
+      "title": "Custom pod labels can override workload selectors",
+      "summary": "Custom pod labels can override workload selectors",
+      "category": "correctness",
+      "severity": "high",
+      "confidence": "high",
+      "whyItMatters": "Rendering selector labels and user-controlled pod labels separately can create duplicate YAML keys or change a selector key only on the pod template.",
+      "impact": "The rendered workload can be rejected or its pod template can stop matching the immutable workload selector.",
+      "recommendation": "Merge custom and selector label maps before rendering them, with selector labels taking precedence.",
+      "complexity": "small",
+      "tags": [
+        "helm",
+        "kubernetes",
+        "selectors",
+        "labels"
+      ],
+      "match": {
+        "kind": "selector-label-override",
+        "files": [
+          "templates/*.yaml",
+          "**/templates/*.yaml",
+          "templates/*.yml",
+          "**/templates/*.yml"
+        ]
       }
     },
     {

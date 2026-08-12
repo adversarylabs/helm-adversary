@@ -1,0 +1,10 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: example
+spec:
+  template:
+    metadata:
+      labels:
+        {{ include "example.selectorLabels" . | nindent 8 }}
+        {{ toYaml .Values.podLabels | nindent 8 }}

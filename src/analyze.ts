@@ -45,6 +45,10 @@ function evaluate(rule: RuleSpec, sources: SourceFile[], allPaths: string[]): De
   }
 
   const matchingSources = sources.filter((file) => match.files.some((glob) => matchesGlob(file.path, glob)));
+  if (match.kind === "selector-label-override") {
+    return matchingSources.flatMap((file) => findSelectorLabelOverrides(rule, file));
+  }
+
   if (match.kind === "missing-content") {
     return matchingSources.flatMap((file) => {
       if (!test(file.source, match.trigger) || test(file.source, match.required)) return [];
@@ -90,6 +94,35 @@ function evaluate(rule: RuleSpec, sources: SourceFile[], allPaths: string[]): De
     if (location === undefined) return [];
     return [{ rule, file: file.path, ...location, label: rule.title, data: { matchedPattern: match.pattern.pattern } }];
   });
+}
+
+function findSelectorLabelOverrides(rule: RuleSpec, file: SourceFile): Detection[] {
+  const lines = file.source.split(/\r?\n/);
+  const detections: Detection[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (!/\binclude\s+["'][^"']*selectorLabels[^"']*["']/i.test(line)) continue;
+
+    const start = Math.max(0, index - 3);
+    const end = Math.min(lines.length, index + 9);
+    const region = lines.slice(start, end).join("\n");
+    if (!/^\s*labels:\s*$/im.test(region)) continue;
+    if (!/\bpodLabels\b/.test(region)) continue;
+    if (!/\btoYaml\b/.test(region)) continue;
+    if (/\bmerge(?:Overwrite)?\s*\(/.test(region)) continue;
+
+    detections.push({
+      rule,
+      file: file.path,
+      line: index + 1,
+      snippet: line.trim().slice(0, 240),
+      label: rule.title,
+      data: { selectorHelper: line.trim() },
+    });
+  }
+
+  return detections;
 }
 
 function test(source: string, expression: MatchExpression): boolean {
