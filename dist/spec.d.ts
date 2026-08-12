@@ -7,6 +7,7 @@ interface ContentMatch {
     kind: "content";
     files: string[];
     pattern: MatchExpression;
+    anchors?: MatchExpression[];
     requires: MatchExpression[];
 }
 interface MissingContentMatch {
@@ -104,6 +105,13 @@ export declare const spec: {
                 readonly pattern: "kind:\\s*ClusterRoleBinding[\\s\\S]{0,300}name:\\s*cluster-admin";
                 readonly flags: "i";
             };
+            readonly anchors: [{
+                readonly pattern: "kind:\\s*ClusterRoleBinding";
+                readonly flags: "i";
+            }, {
+                readonly pattern: "name:\\s*cluster-admin";
+                readonly flags: "i";
+            }];
             readonly requires: [];
         };
     }, {
@@ -234,6 +242,16 @@ export declare const spec: {
                 readonly pattern: "kind:\\s*ClusterRole[\\s\\S]{0,400}resources:\\s*\\[[^\\]]*secrets[^\\]]*\\][\\s\\S]{0,120}verbs:\\s*\\[[^\\]]*(?:get|list|watch|\\*)";
                 readonly flags: "i";
             };
+            readonly anchors: [{
+                readonly pattern: "kind:\\s*ClusterRole";
+                readonly flags: "i";
+            }, {
+                readonly pattern: "resources:\\s*\\[[^\\]]*secrets[^\\]]*\\]";
+                readonly flags: "i";
+            }, {
+                readonly pattern: "verbs:\\s*\\[[^\\]]*(?:get|list|watch|\\*)";
+                readonly flags: "i";
+            }];
             readonly requires: [];
         };
     }, {
@@ -255,6 +273,13 @@ export declare const spec: {
                 readonly pattern: "helm\\.sh/hook[\\\"']?[^\\n]*\\n[\\s\\S]{0,400}privileged:\\s*true";
                 readonly flags: "i";
             };
+            readonly anchors: [{
+                readonly pattern: "helm\\.sh/hook[\\\"']?[^\\n]*";
+                readonly flags: "i";
+            }, {
+                readonly pattern: "privileged:\\s*true";
+                readonly flags: "i";
+            }];
             readonly requires: [];
         };
     }, {

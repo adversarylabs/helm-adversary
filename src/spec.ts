@@ -1,7 +1,7 @@
 import { type Confidence, type Severity } from "@adversarylabs/sdk";
 
 export interface MatchExpression { pattern: string; flags: string }
-interface ContentMatch { kind: "content"; files: string[]; pattern: MatchExpression; requires: MatchExpression[] }
+interface ContentMatch { kind: "content"; files: string[]; pattern: MatchExpression; anchors?: MatchExpression[]; requires: MatchExpression[] }
 interface MissingContentMatch { kind: "missing-content"; files: string[]; trigger: MatchExpression; required: MatchExpression }
 interface IndentedBlockContentMatch { kind: "indented-block-content"; files: string[]; blockStart: MatchExpression; pattern: MatchExpression; requires: MatchExpression[] }
 interface IndentedBlockMissingContentMatch { kind: "indented-block-missing-content"; files: string[]; blockStart: MatchExpression; trigger: MatchExpression; required: MatchExpression }
@@ -88,6 +88,16 @@ export const spec = {
           "pattern": "kind:\\s*ClusterRoleBinding[\\s\\S]{0,300}name:\\s*cluster-admin",
           "flags": "i"
         },
+        "anchors": [
+          {
+            "pattern": "kind:\\s*ClusterRoleBinding",
+            "flags": "i"
+          },
+          {
+            "pattern": "name:\\s*cluster-admin",
+            "flags": "i"
+          }
+        ],
         "requires": []
       }
     },
@@ -263,6 +273,20 @@ export const spec = {
           "pattern": "kind:\\s*ClusterRole[\\s\\S]{0,400}resources:\\s*\\[[^\\]]*secrets[^\\]]*\\][\\s\\S]{0,120}verbs:\\s*\\[[^\\]]*(?:get|list|watch|\\*)",
           "flags": "i"
         },
+        "anchors": [
+          {
+            "pattern": "kind:\\s*ClusterRole",
+            "flags": "i"
+          },
+          {
+            "pattern": "resources:\\s*\\[[^\\]]*secrets[^\\]]*\\]",
+            "flags": "i"
+          },
+          {
+            "pattern": "verbs:\\s*\\[[^\\]]*(?:get|list|watch|\\*)",
+            "flags": "i"
+          }
+        ],
         "requires": []
       }
     },
@@ -291,6 +315,16 @@ export const spec = {
           "pattern": "helm\\.sh/hook[\\\"']?[^\\n]*\\n[\\s\\S]{0,400}privileged:\\s*true",
           "flags": "i"
         },
+        "anchors": [
+          {
+            "pattern": "helm\\.sh/hook[\\\"']?[^\\n]*",
+            "flags": "i"
+          },
+          {
+            "pattern": "privileged:\\s*true",
+            "flags": "i"
+          }
+        ],
         "requires": []
       }
     },
