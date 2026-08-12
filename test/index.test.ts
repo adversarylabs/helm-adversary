@@ -48,7 +48,7 @@ test("anchors unsafe custom labels at the selector helper", async () => {
     file: item.location?.file,
     line: item.location?.line,
   })), [
-    { file: "templates/deployment.yaml", line: 9 },
+    { file: "templates/deployment.yaml", line: 12 },
     { file: "templates/statefulset.yaml", line: 9 },
   ]);
 });

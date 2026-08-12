@@ -3,6 +3,9 @@ kind: Deployment
 metadata:
   name: example
 spec:
+  selector:
+    matchLabels:
+      {{ include "example.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:

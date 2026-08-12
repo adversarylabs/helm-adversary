@@ -104,10 +104,17 @@ function findSelectorLabelOverrides(rule: RuleSpec, file: SourceFile): Detection
     const line = lines[index] ?? "";
     if (!/\binclude\s+["'][^"']*selectorLabels[^"']*["']/i.test(line)) continue;
 
-    const start = Math.max(0, index - 3);
+    let labelsIndex = -1;
+    for (let candidate = index; candidate >= Math.max(0, index - 3); candidate -= 1) {
+      if (/^\s*labels:\s*$/.test(lines[candidate] ?? "")) {
+        labelsIndex = candidate;
+        break;
+      }
+    }
+    if (labelsIndex < 0) continue;
+
     const end = Math.min(lines.length, index + 9);
-    const region = lines.slice(start, end).join("\n");
-    if (!/^\s*labels:\s*$/im.test(region)) continue;
+    const region = lines.slice(labelsIndex, end).join("\n");
     if (!/\bpodLabels\b/.test(region)) continue;
     if (!/\btoYaml\b/.test(region)) continue;
     if (/\bmerge(?:Overwrite)?\s*\(/.test(region)) continue;
