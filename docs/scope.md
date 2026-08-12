@@ -14,6 +14,7 @@ Review Helm charts for RBAC, privileged defaults, mutable images, dependency pin
 
 - Excessive RBAC
 - Privileged defaults
+- Explicit capability additions that retain the runtime default capability set
 - Mutable images / unpinned deps
 
 ## Out of scope (not a miss for this adversary)

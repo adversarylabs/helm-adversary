@@ -1,0 +1,14 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: repair
+spec:
+  template:
+    spec:
+      containers:
+        - name: repair
+          securityContext:
+            capabilities:
+              add:
+                - SYS_ADMIN
+                - SYS_PTRACE

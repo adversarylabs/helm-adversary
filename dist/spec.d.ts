@@ -22,6 +22,13 @@ interface IndentedBlockContentMatch {
     pattern: MatchExpression;
     requires: MatchExpression[];
 }
+interface IndentedBlockMissingContentMatch {
+    kind: "indented-block-missing-content";
+    files: string[];
+    blockStart: MatchExpression;
+    trigger: MatchExpression;
+    required: MatchExpression;
+}
 interface MissingFileMatch {
     kind: "missing-file";
     triggerFiles: string[];
@@ -39,7 +46,7 @@ export interface RuleSpec {
     recommendation: string;
     complexity: "trivial" | "small" | "medium" | "large";
     tags: string[];
-    match: ContentMatch | MissingContentMatch | IndentedBlockContentMatch | MissingFileMatch;
+    match: ContentMatch | MissingContentMatch | IndentedBlockContentMatch | IndentedBlockMissingContentMatch | MissingFileMatch;
 }
 export interface AdversarySpec {
     id: string;
@@ -245,6 +252,34 @@ export declare const spec: {
                 readonly flags: "i";
             };
             readonly requires: [];
+        };
+    }, {
+        readonly id: "helm.capabilities-add-without-drop-all";
+        readonly title: "Chart adds Linux capabilities without dropping runtime defaults";
+        readonly summary: "Chart adds Linux capabilities without dropping runtime defaults";
+        readonly category: "security";
+        readonly severity: "medium";
+        readonly confidence: "high";
+        readonly whyItMatters: "Adding a capability without first dropping ALL preserves the container runtime default capability set as well as the requested capability.";
+        readonly impact: "The rendered workload receives broader kernel privileges than the chart configuration communicates.";
+        readonly recommendation: "Add drop: [\"ALL\"] in the same capabilities block, then add back only the capabilities the workload requires.";
+        readonly complexity: "small";
+        readonly tags: ["security", "capabilities", "defaults"];
+        readonly match: {
+            readonly kind: "indented-block-missing-content";
+            readonly files: ["values.yaml", "**/values.yaml", "templates/*.yaml", "**/templates/*.yaml", "templates/*.yml", "**/templates/*.yml"];
+            readonly blockStart: {
+                readonly pattern: "^[ \\t]*capabilities:\\s*$";
+                readonly flags: "im";
+            };
+            readonly trigger: {
+                readonly pattern: "^[ \\t]*add:\\s*(?:\\[[^\\]\\r\\n]*[A-Za-z0-9_][^\\]\\r\\n]*\\]|(?:\\r?\\n[ \\t]+-[ \\t]*[\\\"']?[A-Za-z0-9_]))";
+                readonly flags: "im";
+            };
+            readonly required: {
+                readonly pattern: "^[ \\t]*drop:\\s*(?:\\[[^\\]\\r\\n]*[\\\"']?ALL[\\\"']?[^\\]\\r\\n]*\\]|(?:\\r?\\n[ \\t]+-[ \\t]*[\\\"']?ALL[\\\"']?[ \\t]*(?:#.*)?$))";
+                readonly flags: "im";
+            };
         };
     }];
 };

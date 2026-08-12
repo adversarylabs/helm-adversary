@@ -1,0 +1,10 @@
+sidecar:
+  securityContext:
+    capabilities:
+      add: ["NET_ADMIN"]
+
+listener:
+  securityContext:
+    capabilities:
+      drop: ["NET_RAW"]
+      add: ["NET_BIND_SERVICE"]
