@@ -340,6 +340,34 @@ export const spec = {
             }
         },
         {
+            "id": "helm.conditional-file-mount",
+            "title": "File argument can render without its mounted file",
+            "summary": "A container file argument is available under broader values than its matching volume mount",
+            "category": "correctness",
+            "severity": "high",
+            "confidence": "high",
+            "whyItMatters": "Helm can render the file-valued argument while omitting the volume mount or backing volume that provides that path.",
+            "impact": "The container can fail at startup when it tries to open a file that was not mounted.",
+            "recommendation": "Gate the argument, matching volumeMount, and backing volume with the same requirement, or make the mount available whenever the argument renders.",
+            "complexity": "small",
+            "tags": [
+                "helm",
+                "kubernetes",
+                "volumes",
+                "templates",
+                "correctness"
+            ],
+            "match": {
+                "kind": "conditional-file-mount",
+                "files": [
+                    "templates/*.yaml",
+                    "**/templates/*.yaml",
+                    "templates/*.yml",
+                    "**/templates/*.yml"
+                ]
+            }
+        },
+        {
             "id": "helm.capabilities-add-without-drop-all",
             "title": "Chart adds Linux capabilities without dropping runtime defaults",
             "summary": "Chart adds Linux capabilities without dropping runtime defaults",

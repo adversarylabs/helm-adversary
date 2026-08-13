@@ -39,6 +39,10 @@ interface SelectorLabelOverrideMatch {
     kind: "selector-label-override";
     files: string[];
 }
+interface ConditionalFileMountMatch {
+    kind: "conditional-file-mount";
+    files: string[];
+}
 export interface RuleSpec {
     id: string;
     title: string;
@@ -51,7 +55,7 @@ export interface RuleSpec {
     recommendation: string;
     complexity: "trivial" | "small" | "medium" | "large";
     tags: string[];
-    match: ContentMatch | MissingContentMatch | IndentedBlockContentMatch | IndentedBlockMissingContentMatch | MissingFileMatch | SelectorLabelOverrideMatch;
+    match: ContentMatch | MissingContentMatch | IndentedBlockContentMatch | IndentedBlockMissingContentMatch | MissingFileMatch | SelectorLabelOverrideMatch | ConditionalFileMountMatch;
 }
 export interface AdversarySpec {
     id: string;
@@ -296,6 +300,22 @@ export declare const spec: {
         readonly tags: ["helm", "kubernetes", "selectors", "labels"];
         readonly match: {
             readonly kind: "selector-label-override";
+            readonly files: ["templates/*.yaml", "**/templates/*.yaml", "templates/*.yml", "**/templates/*.yml"];
+        };
+    }, {
+        readonly id: "helm.conditional-file-mount";
+        readonly title: "File argument can render without its mounted file";
+        readonly summary: "A container file argument is available under broader values than its matching volume mount";
+        readonly category: "correctness";
+        readonly severity: "high";
+        readonly confidence: "high";
+        readonly whyItMatters: "Helm can render the file-valued argument while omitting the volume mount or backing volume that provides that path.";
+        readonly impact: "The container can fail at startup when it tries to open a file that was not mounted.";
+        readonly recommendation: "Gate the argument, matching volumeMount, and backing volume with the same requirement, or make the mount available whenever the argument renders.";
+        readonly complexity: "small";
+        readonly tags: ["helm", "kubernetes", "volumes", "templates", "correctness"];
+        readonly match: {
+            readonly kind: "conditional-file-mount";
             readonly files: ["templates/*.yaml", "**/templates/*.yaml", "templates/*.yml", "**/templates/*.yml"];
         };
     }, {

@@ -1,0 +1,6 @@
+replication:
+  enabled: true
+  tls:
+    enabled: true
+webhook:
+  enabled: false

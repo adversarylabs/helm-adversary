@@ -7,10 +7,11 @@ interface IndentedBlockContentMatch { kind: "indented-block-content"; files: str
 interface IndentedBlockMissingContentMatch { kind: "indented-block-missing-content"; files: string[]; blockStart: MatchExpression; trigger: MatchExpression; required: MatchExpression }
 interface MissingFileMatch { kind: "missing-file"; triggerFiles: string[]; requiredFiles: string[] }
 interface SelectorLabelOverrideMatch { kind: "selector-label-override"; files: string[] }
+interface ConditionalFileMountMatch { kind: "conditional-file-mount"; files: string[] }
 export interface RuleSpec {
   id: string; title: string; summary: string; category: string; severity: Severity; confidence: Confidence;
   whyItMatters: string; impact: string; recommendation: string; complexity: "trivial" | "small" | "medium" | "large"; tags: string[];
-  match: ContentMatch | MissingContentMatch | IndentedBlockContentMatch | IndentedBlockMissingContentMatch | MissingFileMatch | SelectorLabelOverrideMatch;
+  match: ContentMatch | MissingContentMatch | IndentedBlockContentMatch | IndentedBlockMissingContentMatch | MissingFileMatch | SelectorLabelOverrideMatch | ConditionalFileMountMatch;
 }
 export interface AdversarySpec { id: string; displayName: string; description: string; files: string[]; rules: RuleSpec[] }
 
@@ -347,6 +348,34 @@ export const spec = {
       ],
       "match": {
         "kind": "selector-label-override",
+        "files": [
+          "templates/*.yaml",
+          "**/templates/*.yaml",
+          "templates/*.yml",
+          "**/templates/*.yml"
+        ]
+      }
+    },
+    {
+      "id": "helm.conditional-file-mount",
+      "title": "File argument can render without its mounted file",
+      "summary": "A container file argument is available under broader values than its matching volume mount",
+      "category": "correctness",
+      "severity": "high",
+      "confidence": "high",
+      "whyItMatters": "Helm can render the file-valued argument while omitting the volume mount or backing volume that provides that path.",
+      "impact": "The container can fail at startup when it tries to open a file that was not mounted.",
+      "recommendation": "Gate the argument, matching volumeMount, and backing volume with the same requirement, or make the mount available whenever the argument renders.",
+      "complexity": "small",
+      "tags": [
+        "helm",
+        "kubernetes",
+        "volumes",
+        "templates",
+        "correctness"
+      ],
+      "match": {
+        "kind": "conditional-file-mount",
         "files": [
           "templates/*.yaml",
           "**/templates/*.yaml",
