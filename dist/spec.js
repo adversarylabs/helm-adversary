@@ -340,6 +340,34 @@ export const spec = {
             }
         },
         {
+            "id": "helm.conditional-file-mount",
+            "title": "File argument can outlive its declared volume mount",
+            "summary": "A container references a file path on a render path where its matching declared volumeMount is unavailable",
+            "category": "correctness",
+            "severity": "high",
+            "confidence": "high",
+            "whyItMatters": "The template can render the file-valued argument while omitting the matching declared volumeMount or backing volume on the same values path.",
+            "impact": "If the image or another runtime mechanism does not provide that path, the process can fail when it tries to open the referenced file.",
+            "recommendation": "Gate the argument, matching volumeMount, and backing volume with the same requirement, or make the mount available whenever the argument renders.",
+            "complexity": "small",
+            "tags": [
+                "helm",
+                "kubernetes",
+                "volumes",
+                "templates",
+                "correctness"
+            ],
+            "match": {
+                "kind": "conditional-file-mount",
+                "files": [
+                    "templates/*.yaml",
+                    "**/templates/*.yaml",
+                    "templates/*.yml",
+                    "**/templates/*.yml"
+                ]
+            }
+        },
+        {
             "id": "helm.capabilities-add-without-drop-all",
             "title": "Chart adds Linux capabilities without dropping runtime defaults",
             "summary": "Chart adds Linux capabilities without dropping runtime defaults",

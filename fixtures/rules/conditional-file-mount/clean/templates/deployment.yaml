@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fixture
+spec:
+  template:
+    spec:
+      containers:
+        - name: controller
+          image: example/controller:1.2.3
+          args:
+            {{- if and .Values.replication.enabled .Values.replication.tls.enabled }}
+            - --peer-ca-file=/var/run/trust-bundle/ca.pem
+            {{- end }}
+          {{- if .Values.replication.enabled }}
+          volumeMounts:
+            - mountPath: /var/run/trust-bundle
+              name: trust-bundle
+              readOnly: true
+          {{- end }}
+      {{- if .Values.replication.enabled }}
+      volumes:
+        - name: trust-bundle
+          secret:
+            secretName: fixture-trust
+      {{- end }}

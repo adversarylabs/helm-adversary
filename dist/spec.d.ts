@@ -39,6 +39,10 @@ interface SelectorLabelOverrideMatch {
     kind: "selector-label-override";
     files: string[];
 }
+interface ConditionalFileMountMatch {
+    kind: "conditional-file-mount";
+    files: string[];
+}
 export interface RuleSpec {
     id: string;
     title: string;
@@ -51,7 +55,7 @@ export interface RuleSpec {
     recommendation: string;
     complexity: "trivial" | "small" | "medium" | "large";
     tags: string[];
-    match: ContentMatch | MissingContentMatch | IndentedBlockContentMatch | IndentedBlockMissingContentMatch | MissingFileMatch | SelectorLabelOverrideMatch;
+    match: ContentMatch | MissingContentMatch | IndentedBlockContentMatch | IndentedBlockMissingContentMatch | MissingFileMatch | SelectorLabelOverrideMatch | ConditionalFileMountMatch;
 }
 export interface AdversarySpec {
     id: string;
@@ -296,6 +300,22 @@ export declare const spec: {
         readonly tags: ["helm", "kubernetes", "selectors", "labels"];
         readonly match: {
             readonly kind: "selector-label-override";
+            readonly files: ["templates/*.yaml", "**/templates/*.yaml", "templates/*.yml", "**/templates/*.yml"];
+        };
+    }, {
+        readonly id: "helm.conditional-file-mount";
+        readonly title: "File argument can outlive its declared volume mount";
+        readonly summary: "A container references a file path on a render path where its matching declared volumeMount is unavailable";
+        readonly category: "correctness";
+        readonly severity: "high";
+        readonly confidence: "high";
+        readonly whyItMatters: "The template can render the file-valued argument while omitting the matching declared volumeMount or backing volume on the same values path.";
+        readonly impact: "If the image or another runtime mechanism does not provide that path, the process can fail when it tries to open the referenced file.";
+        readonly recommendation: "Gate the argument, matching volumeMount, and backing volume with the same requirement, or make the mount available whenever the argument renders.";
+        readonly complexity: "small";
+        readonly tags: ["helm", "kubernetes", "volumes", "templates", "correctness"];
+        readonly match: {
+            readonly kind: "conditional-file-mount";
             readonly files: ["templates/*.yaml", "**/templates/*.yaml", "templates/*.yml", "**/templates/*.yml"];
         };
     }, {

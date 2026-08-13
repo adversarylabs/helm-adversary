@@ -7,6 +7,16 @@ import { observationFor } from "./rules.js";
 import { spec, type MatchExpression, type RuleSpec } from "./spec.js";
 
 const SKIPPED = new Set([".adversary", ".git", ".hg", ".next", ".svn", "coverage", "dist", "node_modules", "target", "vendor"]);
+const POD_TEMPLATE_KINDS = new Set([
+  "CronJob",
+  "DaemonSet",
+  "Deployment",
+  "Job",
+  "Pod",
+  "ReplicaSet",
+  "ReplicationController",
+  "StatefulSet",
+]);
 const MAX_FILES = 5000;
 const execute = promisify(execFile);
 
@@ -77,6 +87,10 @@ function evaluate(rule: RuleSpec, sources: SourceFile[], allPaths: string[]): De
     return matchingSources.flatMap((file) => findSelectorLabelOverrides(rule, file));
   }
 
+  if (match.kind === "conditional-file-mount") {
+    return matchingSources.flatMap((file) => findConditionalFileMounts(rule, file));
+  }
+
   if (match.kind === "missing-content") {
     return matchingSources.flatMap((file) => {
       if (!test(file.source, match.trigger) || test(file.source, match.required)) return [];
@@ -119,6 +133,472 @@ function evaluate(rule: RuleSpec, sources: SourceFile[], allPaths: string[]): De
     const location = locateEligible(file, match.pattern, 0, file.source, match.anchors);
     if (location === undefined) return [];
     return [{ rule, file: file.path, ...location, label: rule.title, data: { matchedPattern: match.pattern.pattern } }];
+  });
+}
+
+interface GuardState {
+  predicates: Map<string, number>;
+  provable: boolean;
+}
+
+interface GuardedLine extends GuardState {
+  line: number;
+  source: string;
+  activeYaml: boolean;
+}
+
+interface FileArgument extends GuardState {
+  line: number;
+  path: string;
+}
+
+interface ContainerScope {
+  name: string;
+  item: GuardedLine;
+  lines: GuardedLine[];
+  propertyIndent: number;
+}
+
+interface VolumeMount extends GuardState {
+  line: number;
+  name: string;
+  mountPath: string;
+}
+
+interface Volume extends GuardState {
+  line: number;
+  name: string;
+}
+
+interface HelmGuardFrame {
+  predicates: Map<string, number>;
+  provable: boolean;
+}
+
+function findConditionalFileMounts(rule: RuleSpec, file: SourceFile): Detection[] {
+  const detections: Detection[] = [];
+  for (const document of helmDocuments(file.source)) {
+    const guardedLines = annotateHelmGuards(document.source, document.startLine);
+    if (!isPodBearingDocument(guardedLines)) continue;
+    for (let index = 0; index < guardedLines.length; index += 1) {
+      const containerHeader = guardedLines[index];
+      if (
+        containerHeader === undefined ||
+        !containerHeader.activeYaml ||
+        !/^(?:containers|initContainers|ephemeralContainers):$/.test(containerHeader.source.trim())
+      ) {
+        continue;
+      }
+
+      const memberIndent = indentation(containerHeader.source);
+      const podLines = enclosingYamlBlock(guardedLines, index, memberIndent);
+      const volumes = findVolumes(podLines, memberIndent);
+      for (const container of findContainerScopes(guardedLines, index)) {
+        const args = findFileArguments(container);
+        const mounts = findVolumeMounts(container.lines, container.propertyIndent);
+        for (const argument of args) {
+          const detection = detectConditionalFileMount(
+            rule,
+            file,
+            container,
+            argument,
+            mounts,
+            volumes,
+          );
+          if (detection !== undefined) detections.push(detection);
+        }
+      }
+    }
+  }
+  return detections;
+}
+
+function detectConditionalFileMount(
+  rule: RuleSpec,
+  file: SourceFile,
+  container: ContainerScope,
+  argument: FileArgument,
+  mounts: VolumeMount[],
+  volumes: Volume[],
+): Detection | undefined {
+  if (!argument.provable) return undefined;
+  const matchingMounts = mounts.filter(
+    (mount) =>
+      mount.provable &&
+      (argument.path === mount.mountPath || argument.path.startsWith(`${mount.mountPath}/`)),
+  );
+  if (matchingMounts.length === 0) return undefined;
+
+  const fullyAvailable = matchingMounts.some((mount) => {
+    if (missingAvailabilityPredicate(argument, mount) !== undefined) return false;
+    return volumes.some(
+      (volume) =>
+        volume.provable &&
+        volume.name === mount.name &&
+        missingAvailabilityPredicate(argument, volume) === undefined,
+    );
+  });
+  if (fullyAvailable) return undefined;
+
+  for (const mount of matchingMounts) {
+    const matchingVolumes = volumes.filter(
+      (volume) => volume.provable && volume.name === mount.name,
+    );
+    if (matchingVolumes.length === 0) continue;
+
+    const mountMismatch = missingAvailabilityPredicate(argument, mount);
+    const volumeMismatch = matchingVolumes
+      .map((volume) => ({ volume, mismatch: missingAvailabilityPredicate(argument, volume) }))
+      .find(({ mismatch }) => mismatch !== undefined);
+    if (mountMismatch === undefined && volumeMismatch === undefined) continue;
+
+    const mismatch = mountMismatch ?? volumeMismatch?.mismatch;
+    const resourceLine = mountMismatch === undefined
+      ? (volumeMismatch?.volume.line ?? mount.line)
+      : mount.line;
+    const guardLine = mismatch === undefined
+      ? undefined
+      : (mount.predicates.get(mismatch) ?? volumeMismatch?.volume.predicates.get(mismatch));
+    const anchor = [argument.line, resourceLine, guardLine]
+      .find((line): line is number => line !== undefined && isEligibleLine(file, line));
+    if (anchor === undefined) continue;
+
+    return {
+      rule,
+      file: file.path,
+      line: anchor,
+      snippet: file.source.split(/\r?\n/)[anchor - 1]?.trim().slice(0, 240) ?? "",
+      label: rule.title,
+      data: {
+        argumentPath: argument.path,
+        container: container.name,
+        volumeMount: mount.name,
+        mountPath: mount.mountPath,
+        unavailableWhen: mismatch,
+      },
+    };
+  }
+  return undefined;
+}
+
+function missingAvailabilityPredicate(
+  argument: GuardState,
+  resource: GuardState,
+): string | undefined {
+  for (const predicate of resource.predicates.keys()) {
+    if (!argument.predicates.has(predicate)) return predicate;
+  }
+  return undefined;
+}
+
+function helmDocuments(source: string): Array<{ source: string; startLine: number }> {
+  const lines = source.split(/\r?\n/);
+  const documents: Array<{ source: string; startLine: number }> = [];
+  let start = 0;
+  for (let index = 0; index <= lines.length; index += 1) {
+    if (index < lines.length && !/^---\s*(?:#.*)?$/.test(lines[index]?.trim() ?? "")) continue;
+    if (index > start) {
+      documents.push({ source: lines.slice(start, index).join("\n"), startLine: start + 1 });
+    }
+    start = index + 1;
+  }
+  return documents;
+}
+
+function annotateHelmGuards(source: string, startLine: number): GuardedLine[] {
+  const stack: HelmGuardFrame[] = [];
+  const variables = new Map<string, HelmGuardFrame>();
+  const guarded: GuardedLine[] = [];
+  const lines = source.split(/\r?\n/);
+  let blockScalarIndent: number | undefined;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const sourceLine = startLine + index;
+    const trimmed = line.trim();
+    if (
+      blockScalarIndent !== undefined &&
+      trimmed !== "" &&
+      indentation(line) <= blockScalarIndent
+    ) {
+      blockScalarIndent = undefined;
+    }
+    const activeYaml = blockScalarIndent === undefined;
+    const actions = [...line.matchAll(/{{-?\s*([\s\S]*?)\s*-?}}/g)];
+    for (const action of actions) {
+      const expression = action[1]?.trim() ?? "";
+      const assignment = expression.match(/^(\$[A-Za-z_]\w*)\s*:=\s*(.+)$/);
+      if (assignment !== null) {
+        variables.set(assignment[1] ?? "", parseGuard(assignment[2] ?? "", sourceLine, variables));
+        continue;
+      }
+      const opening = expression.match(/^(if|with)\s+(.+)$/);
+      if (opening !== null) {
+        stack.push(parseGuard(opening[2] ?? "", sourceLine, variables));
+        continue;
+      }
+      if (/^(?:range|define|block)\b/.test(expression)) {
+        stack.push({ predicates: new Map(), provable: false });
+        continue;
+      }
+      if (/^else\b/.test(expression)) {
+        if (stack.length > 0) stack[stack.length - 1] = { predicates: new Map(), provable: false };
+        continue;
+      }
+      if (/^end\b/.test(expression)) stack.pop();
+    }
+
+    if (line.replace(/{{-?\s*[\s\S]*?\s*-?}}/g, "").trim() === "") continue;
+    const predicates = new Map<string, number>();
+    let provable = true;
+    for (const frame of stack) {
+      provable &&= frame.provable;
+      for (const [predicate, lineNumber] of frame.predicates) predicates.set(predicate, lineNumber);
+    }
+    guarded.push({ line: sourceLine, source: line, predicates, provable, activeYaml });
+    if (activeYaml && /:\s*[>|](?:[+-][1-9]?|[1-9][+-]?|)\s*(?:#.*)?$/.test(line)) {
+      blockScalarIndent = indentation(line);
+    }
+  }
+  return guarded;
+}
+
+function parseGuard(
+  expression: string,
+  line: number,
+  variables: Map<string, HelmGuardFrame>,
+): HelmGuardFrame {
+  const normalized = expression.replace(/[()]/g, " ").trim();
+  const tokens = normalized.match(/(?:"[^"]*"|'[^']*'|[^\s]+)/g) ?? [];
+  if (tokens.length === 1 && tokens[0]?.startsWith("$")) {
+    return variables.get(tokens[0]) ?? { predicates: new Map(), provable: false };
+  }
+  const valueTokens = tokens[0] === "and" ? tokens.slice(1) : tokens;
+  if (valueTokens.length === 0 || valueTokens.some((token) => !/^\.Values(?:\.[A-Za-z_]\w*)+$/.test(token))) {
+    return { predicates: new Map(), provable: false };
+  }
+  return {
+    predicates: new Map(valueTokens.map((token) => [token, line])),
+    provable: true,
+  };
+}
+
+function findFileArguments(container: ContainerScope): FileArgument[] {
+  const args: FileArgument[] = [];
+  const expression = /^\s*-\s*["']?--[A-Za-z0-9][A-Za-z0-9-]*(?:file|path|cert|key|config)[A-Za-z0-9-]*\s*=\s*(\/[A-Za-z0-9._/-]*[A-Za-z0-9._-])["']?\s*(?:#.*)?$/i;
+  for (let index = 0; index < container.lines.length; index += 1) {
+    const section = container.lines[index];
+    if (
+      section === undefined ||
+      !section.activeYaml ||
+      indentation(section.source) !== container.propertyIndent ||
+      !/^(?:args|command):$/.test(section.source.trim())
+    ) {
+      continue;
+    }
+    for (const item of yamlListItems(container.lines, index)) {
+      const scalar = item.lines[0];
+      if (
+        scalar === undefined ||
+        !scalar.activeYaml ||
+        scalar.source.trim().startsWith("#")
+      ) {
+        continue;
+      }
+      const path = scalar.source.match(expression)?.[1];
+      if (path === undefined || path === "/" || path.includes("//")) continue;
+      const guard = combineGuardStates([container.item, section, scalar]);
+      args.push({ line: scalar.line, path, ...guard });
+    }
+  }
+  return args;
+}
+
+function findVolumeMounts(lines: GuardedLine[], sectionIndent: number): VolumeMount[] {
+  return findNamedYamlEntries(lines, "volumeMounts", sectionIndent).flatMap((entry) => {
+    const mountPath = entry.lines
+      .map((line) => ({ line, match: line.source.match(/^\s*(?:-\s*)?mountPath:\s*["']?(\/[A-Za-z0-9._/-]+)["']?\s*(?:#.*)?$/) }))
+      .find(({ line, match }) =>
+        match !== null &&
+        (line === entry.lines[0] || indentation(line.source) === entry.propertyIndent),
+      );
+    if (mountPath?.match?.[1] === undefined) return [];
+    return [{
+      line: entry.nameLine.line,
+      name: entry.name,
+      mountPath: mountPath.match[1].replace(/\/$/, ""),
+      ...combineGuardStates([entry.section, entry.nameLine, mountPath.line]),
+    }];
+  });
+}
+
+function findVolumes(lines: GuardedLine[], sectionIndent: number): Volume[] {
+  return findNamedYamlEntries(lines, "volumes", sectionIndent).map((entry) => ({
+    line: entry.nameLine.line,
+    name: entry.name,
+    ...combineGuardStates([entry.section, entry.nameLine]),
+  }));
+}
+
+interface NamedYamlEntry {
+  section: GuardedLine;
+  name: string;
+  nameLine: GuardedLine;
+  lines: GuardedLine[];
+  propertyIndent: number;
+}
+
+function findNamedYamlEntries(
+  lines: GuardedLine[],
+  sectionName: string,
+  expectedIndent?: number,
+): NamedYamlEntry[] {
+  const entries: NamedYamlEntry[] = [];
+  for (let sectionIndex = 0; sectionIndex < lines.length; sectionIndex += 1) {
+    const section = lines[sectionIndex];
+    if (
+      section === undefined ||
+      !section.activeYaml ||
+      section.source.trim() !== `${sectionName}:` ||
+      (expectedIndent !== undefined && indentation(section.source) !== expectedIndent)
+    ) {
+      continue;
+    }
+    for (const candidate of yamlListItems(lines, sectionIndex)) {
+      const first = candidate.lines[0];
+      const propertyIndent = indentation(first?.source ?? "") + 2;
+      const named = candidate.lines
+        .map((line) => ({
+          line,
+          name: line.source.match(/^\s*(?:-\s*)?name:\s*["']?([A-Za-z0-9._-]+)["']?\s*(?:#.*)?$/)?.[1],
+        }))
+        .find(({ line, name }) =>
+          name !== undefined &&
+          (line === first || indentation(line.source) === propertyIndent),
+        );
+      if (named?.name === undefined) continue;
+      entries.push({
+        section,
+        name: named.name,
+        nameLine: named.line,
+        lines: candidate.lines,
+        propertyIndent,
+      });
+    }
+  }
+  return entries;
+}
+
+function findContainerScopes(lines: GuardedLine[], sectionIndex: number): ContainerScope[] {
+  return yamlListItems(lines, sectionIndex).map((item) => {
+    const itemIndent = indentation(item.lines[0]?.source ?? "");
+    const propertyIndent = itemIndent + 2;
+    const named = item.lines
+      .map((line) => ({
+        line,
+        name: line.source.match(/^\s*(?:-\s*)?name:\s*["']?([A-Za-z0-9._-]+)["']?\s*(?:#.*)?$/)?.[1],
+      }))
+      .find(({ line, name }) =>
+        name !== undefined &&
+        (line === item.lines[0] || indentation(line.source) === propertyIndent),
+      );
+    return {
+      name: named?.name ?? `container at line ${item.lines[0]?.line ?? 0}`,
+      item: item.lines[0] ?? lines[sectionIndex]!,
+      lines: item.lines,
+      propertyIndent,
+    };
+  });
+}
+
+function yamlListItems(
+  lines: GuardedLine[],
+  sectionIndex: number,
+): Array<{ lines: GuardedLine[] }> {
+  const section = lines[sectionIndex];
+  if (section === undefined) return [];
+  const sectionIndent = indentation(section.source);
+  let itemIndent: number | undefined;
+  let current: { lines: GuardedLine[] } | undefined;
+  const items: Array<{ lines: GuardedLine[] }> = [];
+  for (let index = sectionIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line === undefined) break;
+    const trimmed = line.source.trim();
+    if (!line.activeYaml || trimmed === "" || trimmed.startsWith("#")) continue;
+    const lineIndent = indentation(line.source);
+    if (lineIndent <= sectionIndent) break;
+    if (/^\s*-\s+/.test(line.source) && (itemIndent === undefined || lineIndent === itemIndent)) {
+      itemIndent ??= lineIndent;
+      current = { lines: [line] };
+      items.push(current);
+    } else if (current !== undefined) {
+      current.lines.push(line);
+    }
+  }
+  return items;
+}
+
+function enclosingYamlBlock(
+  lines: GuardedLine[],
+  childIndex: number,
+  childIndent: number,
+): GuardedLine[] {
+  let start = 0;
+  let parentIndent = -1;
+  for (let index = childIndex - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    if (
+      line === undefined ||
+      !line.activeYaml ||
+      line.source.trim().startsWith("#")
+    ) {
+      continue;
+    }
+    const lineIndent = indentation(line.source);
+    if (lineIndent < childIndent) {
+      start = index;
+      parentIndent = lineIndent;
+      break;
+    }
+  }
+  let end = lines.length;
+  for (let index = childIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (
+      line === undefined ||
+      !line.activeYaml ||
+      line.source.trim().startsWith("#")
+    ) {
+      continue;
+    }
+    if (indentation(line.source) <= parentIndent) {
+      end = index;
+      break;
+    }
+  }
+  return lines.slice(start, end);
+}
+
+function combineGuardStates(states: GuardState[]): GuardState {
+  const predicates = new Map<string, number>();
+  let provable = true;
+  for (const state of states) {
+    provable &&= state.provable;
+    for (const [predicate, line] of state.predicates) predicates.set(predicate, line);
+  }
+  return { predicates, provable };
+}
+
+function indentation(source: string): number {
+  return source.match(/^[ \t]*/)?.[0].length ?? 0;
+}
+
+function isPodBearingDocument(lines: GuardedLine[]): boolean {
+  return lines.some((line) => {
+    if (!line.activeYaml || indentation(line.source) !== 0) return false;
+    const kind = line.source.match(/^kind:\s*["']?([A-Za-z][A-Za-z0-9]*)["']?\s*(?:#.*)?$/)?.[1];
+    return kind !== undefined && POD_TEMPLATE_KINDS.has(kind);
   });
 }
 

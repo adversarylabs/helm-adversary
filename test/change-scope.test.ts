@@ -107,6 +107,39 @@ test("an added manifest remains eligible in full", async () => {
   );
 });
 
+test("a changed file argument can use unchanged mount context", async () => {
+  const original = conditionalFileMountTemplate("root.pem", "stable");
+  const repo = await committedRepository({ "templates/deployment.yaml": original });
+  await writeFile(
+    join(repo, "templates/deployment.yaml"),
+    conditionalFileMountTemplate("ca.pem", "stable"),
+  );
+
+  const output = await changedReview(repo, ["templates/deployment.yaml"]);
+
+  const finding = output.findings.find(
+    (item) => item.ruleId === "helm.conditional-file-mount",
+  );
+  assert.ok(finding);
+  assert.equal(finding.evidence[0]?.location?.line, 13);
+});
+
+test("an unrelated edit does not reactivate a legacy conditional mount mismatch", async () => {
+  const original = conditionalFileMountTemplate("ca.pem", "old");
+  const repo = await committedRepository({ "templates/deployment.yaml": original });
+  await writeFile(
+    join(repo, "templates/deployment.yaml"),
+    conditionalFileMountTemplate("ca.pem", "new"),
+  );
+
+  const output = await changedReview(repo, ["templates/deployment.yaml"]);
+
+  assert.equal(
+    output.findings.some((item) => item.ruleId === "helm.conditional-file-mount"),
+    false,
+  );
+});
+
 test("an all-files review remains eligible in full", async () => {
   const repo = await committedRepository({
     "values.yaml": valuesSource("latest", "old diagnostic"),
@@ -217,6 +250,38 @@ spec:
         {{ include "${helper}" . | nindent 8 }}
       {{- with .Values.podLabels }}
         {{ toYaml . | nindent 8 }}
+      {{- end }}
+`;
+}
+
+function conditionalFileMountTemplate(file: string, diagnostic: string): string {
+  return `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fixture
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          image: example/app:1
+          args:
+            {{- if and .Values.replication.enabled .Values.replication.tls.enabled }}
+            - --peer-ca-file=/var/run/trust-bundle/${file}
+            {{- end }}
+          env:
+            - name: DIAGNOSTIC
+              value: ${diagnostic}
+          {{- if .Values.webhook.enabled }}
+          volumeMounts:
+            - name: trust-bundle
+              mountPath: /var/run/trust-bundle
+          {{- end }}
+      {{- if .Values.webhook.enabled }}
+      volumes:
+        - name: trust-bundle
+          secret:
+            secretName: fixture-trust
       {{- end }}
 `;
 }

@@ -1,0 +1,30 @@
+# args:
+#   - --commented-ca-file=/var/run/text-only/ca.pem
+apiVersion: v1
+kind: Deployment
+metadata:
+  name: examples
+  annotations:
+    example.invalid/command: "--annotation-ca-file=/var/run/text-only/ca.pem"
+    example.invalid/instructions: |2-
+      containers:
+        - name: documentation
+          args:
+            - --documented-ca-file=/var/run/text-only/ca.pem
+          volumeMounts:
+            - name: text-only
+              mountPath: /var/run/text-only
+      volumes:
+        - name: text-only
+spec:
+  template:
+    spec:
+      containers:
+        - name: controller
+          image: example/controller:1.2.3
+          args:
+            # - --commented-ca-file=/var/run/text-only/ca.pem
+            - --listen-address=:8080
+          env:
+            - name: EXAMPLE_ARGUMENT
+              value: "--config-file=/var/run/text-only/config.yaml"
