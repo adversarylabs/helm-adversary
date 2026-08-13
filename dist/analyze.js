@@ -5,6 +5,16 @@ import { promisify } from "node:util";
 import { observationFor } from "./rules.js";
 import { spec } from "./spec.js";
 const SKIPPED = new Set([".adversary", ".git", ".hg", ".next", ".svn", "coverage", "dist", "node_modules", "target", "vendor"]);
+const POD_TEMPLATE_KINDS = new Set([
+    "CronJob",
+    "DaemonSet",
+    "Deployment",
+    "Job",
+    "Pod",
+    "ReplicaSet",
+    "ReplicationController",
+    "StatefulSet",
+]);
 const MAX_FILES = 5000;
 const execute = promisify(execFile);
 export async function analyzeRepository(ctx) {
@@ -113,64 +123,84 @@ function findConditionalFileMounts(rule, file) {
     const detections = [];
     for (const document of helmDocuments(file.source)) {
         const guardedLines = annotateHelmGuards(document.source, document.startLine);
-        const args = findFileArguments(guardedLines);
-        const mounts = findVolumeMounts(guardedLines);
-        const volumes = findVolumes(guardedLines);
-        for (const argument of args) {
-            if (!argument.provable)
+        if (!isPodBearingDocument(guardedLines))
+            continue;
+        for (let index = 0; index < guardedLines.length; index += 1) {
+            const containerHeader = guardedLines[index];
+            if (containerHeader === undefined ||
+                !containerHeader.activeYaml ||
+                !/^(?:containers|initContainers|ephemeralContainers):$/.test(containerHeader.source.trim())) {
                 continue;
-            const matchingMounts = mounts.filter((mount) => mount.provable &&
-                (argument.path === mount.mountPath || argument.path.startsWith(`${mount.mountPath}/`)));
-            if (matchingMounts.length === 0)
-                continue;
-            const fullyAvailable = matchingMounts.some((mount) => {
-                if (missingAvailabilityPredicate(argument, mount) !== undefined)
-                    return false;
-                return volumes.some((volume) => volume.provable &&
-                    volume.name === mount.name &&
-                    missingAvailabilityPredicate(argument, volume) === undefined);
-            });
-            if (fullyAvailable)
-                continue;
-            for (const mount of matchingMounts) {
-                const matchingVolumes = volumes.filter((volume) => volume.provable && volume.name === mount.name);
-                if (matchingVolumes.length === 0)
-                    continue;
-                const mountMismatch = missingAvailabilityPredicate(argument, mount);
-                const volumeMismatch = matchingVolumes
-                    .map((volume) => ({ volume, mismatch: missingAvailabilityPredicate(argument, volume) }))
-                    .find(({ mismatch }) => mismatch !== undefined);
-                if (mountMismatch === undefined && volumeMismatch === undefined)
-                    continue;
-                const mismatch = mountMismatch ?? volumeMismatch?.mismatch;
-                const resourceLine = mountMismatch === undefined
-                    ? (volumeMismatch?.volume.line ?? mount.line)
-                    : mount.line;
-                const guardLine = mismatch === undefined
-                    ? undefined
-                    : (mount.predicates.get(mismatch) ?? volumeMismatch?.volume.predicates.get(mismatch));
-                const anchor = [argument.line, resourceLine, guardLine]
-                    .find((line) => line !== undefined && isEligibleLine(file, line));
-                if (anchor === undefined)
-                    continue;
-                detections.push({
-                    rule,
-                    file: file.path,
-                    line: anchor,
-                    snippet: file.source.split(/\r?\n/)[anchor - 1]?.trim().slice(0, 240) ?? "",
-                    label: rule.title,
-                    data: {
-                        argumentPath: argument.path,
-                        volumeMount: mount.name,
-                        mountPath: mount.mountPath,
-                        unavailableWhen: mismatch,
-                    },
-                });
-                break;
+            }
+            const memberIndent = indentation(containerHeader.source);
+            const podLines = enclosingYamlBlock(guardedLines, index, memberIndent);
+            const volumes = findVolumes(podLines, memberIndent);
+            for (const container of findContainerScopes(guardedLines, index)) {
+                const args = findFileArguments(container);
+                const mounts = findVolumeMounts(container.lines, container.propertyIndent);
+                for (const argument of args) {
+                    const detection = detectConditionalFileMount(rule, file, container, argument, mounts, volumes);
+                    if (detection !== undefined)
+                        detections.push(detection);
+                }
             }
         }
     }
     return detections;
+}
+function detectConditionalFileMount(rule, file, container, argument, mounts, volumes) {
+    if (!argument.provable)
+        return undefined;
+    const matchingMounts = mounts.filter((mount) => mount.provable &&
+        (argument.path === mount.mountPath || argument.path.startsWith(`${mount.mountPath}/`)));
+    if (matchingMounts.length === 0)
+        return undefined;
+    const fullyAvailable = matchingMounts.some((mount) => {
+        if (missingAvailabilityPredicate(argument, mount) !== undefined)
+            return false;
+        return volumes.some((volume) => volume.provable &&
+            volume.name === mount.name &&
+            missingAvailabilityPredicate(argument, volume) === undefined);
+    });
+    if (fullyAvailable)
+        return undefined;
+    for (const mount of matchingMounts) {
+        const matchingVolumes = volumes.filter((volume) => volume.provable && volume.name === mount.name);
+        if (matchingVolumes.length === 0)
+            continue;
+        const mountMismatch = missingAvailabilityPredicate(argument, mount);
+        const volumeMismatch = matchingVolumes
+            .map((volume) => ({ volume, mismatch: missingAvailabilityPredicate(argument, volume) }))
+            .find(({ mismatch }) => mismatch !== undefined);
+        if (mountMismatch === undefined && volumeMismatch === undefined)
+            continue;
+        const mismatch = mountMismatch ?? volumeMismatch?.mismatch;
+        const resourceLine = mountMismatch === undefined
+            ? (volumeMismatch?.volume.line ?? mount.line)
+            : mount.line;
+        const guardLine = mismatch === undefined
+            ? undefined
+            : (mount.predicates.get(mismatch) ?? volumeMismatch?.volume.predicates.get(mismatch));
+        const anchor = [argument.line, resourceLine, guardLine]
+            .find((line) => line !== undefined && isEligibleLine(file, line));
+        if (anchor === undefined)
+            continue;
+        return {
+            rule,
+            file: file.path,
+            line: anchor,
+            snippet: file.source.split(/\r?\n/)[anchor - 1]?.trim().slice(0, 240) ?? "",
+            label: rule.title,
+            data: {
+                argumentPath: argument.path,
+                container: container.name,
+                volumeMount: mount.name,
+                mountPath: mount.mountPath,
+                unavailableWhen: mismatch,
+            },
+        };
+    }
+    return undefined;
 }
 function missingAvailabilityPredicate(argument, resource) {
     for (const predicate of resource.predicates.keys()) {
@@ -198,9 +228,17 @@ function annotateHelmGuards(source, startLine) {
     const variables = new Map();
     const guarded = [];
     const lines = source.split(/\r?\n/);
+    let blockScalarIndent;
     for (let index = 0; index < lines.length; index += 1) {
         const line = lines[index] ?? "";
         const sourceLine = startLine + index;
+        const trimmed = line.trim();
+        if (blockScalarIndent !== undefined &&
+            trimmed !== "" &&
+            indentation(line) <= blockScalarIndent) {
+            blockScalarIndent = undefined;
+        }
+        const activeYaml = blockScalarIndent === undefined;
         const actions = [...line.matchAll(/{{-?\s*([\s\S]*?)\s*-?}}/g)];
         for (const action of actions) {
             const expression = action[1]?.trim() ?? "";
@@ -235,7 +273,10 @@ function annotateHelmGuards(source, startLine) {
             for (const [predicate, lineNumber] of frame.predicates)
                 predicates.set(predicate, lineNumber);
         }
-        guarded.push({ line: sourceLine, source: line, predicates, provable });
+        guarded.push({ line: sourceLine, source: line, predicates, provable, activeYaml });
+        if (activeYaml && /:\s*[>|](?:[+-][1-9]?|[1-9][+-]?|)\s*(?:#.*)?$/.test(line)) {
+            blockScalarIndent = indentation(line);
+        }
     }
     return guarded;
 }
@@ -254,29 +295,39 @@ function parseGuard(expression, line, variables) {
         provable: true,
     };
 }
-function findFileArguments(lines) {
+function findFileArguments(container) {
     const args = [];
-    const expression = /--[A-Za-z0-9][A-Za-z0-9-]*(?:file|path|cert|key|config)[A-Za-z0-9-]*\s*=\s*(\/[A-Za-z0-9._/-]*[A-Za-z0-9._-])/gi;
-    for (const line of lines) {
-        for (const match of line.source.matchAll(expression)) {
-            const path = match[1];
+    const expression = /^\s*-\s*["']?--[A-Za-z0-9][A-Za-z0-9-]*(?:file|path|cert|key|config)[A-Za-z0-9-]*\s*=\s*(\/[A-Za-z0-9._/-]*[A-Za-z0-9._-])["']?\s*(?:#.*)?$/i;
+    for (let index = 0; index < container.lines.length; index += 1) {
+        const section = container.lines[index];
+        if (section === undefined ||
+            !section.activeYaml ||
+            indentation(section.source) !== container.propertyIndent ||
+            !/^(?:args|command):$/.test(section.source.trim())) {
+            continue;
+        }
+        for (const item of yamlListItems(container.lines, index)) {
+            const scalar = item.lines[0];
+            if (scalar === undefined ||
+                !scalar.activeYaml ||
+                scalar.source.trim().startsWith("#")) {
+                continue;
+            }
+            const path = scalar.source.match(expression)?.[1];
             if (path === undefined || path === "/" || path.includes("//"))
                 continue;
-            args.push({
-                line: line.line,
-                path,
-                predicates: new Map(line.predicates),
-                provable: line.provable,
-            });
+            const guard = combineGuardStates([container.item, section, scalar]);
+            args.push({ line: scalar.line, path, ...guard });
         }
     }
     return args;
 }
-function findVolumeMounts(lines) {
-    return findNamedYamlEntries(lines, "volumeMounts").flatMap((entry) => {
+function findVolumeMounts(lines, sectionIndent) {
+    return findNamedYamlEntries(lines, "volumeMounts", sectionIndent).flatMap((entry) => {
         const mountPath = entry.lines
             .map((line) => ({ line, match: line.source.match(/^\s*(?:-\s*)?mountPath:\s*["']?(\/[A-Za-z0-9._/-]+)["']?\s*(?:#.*)?$/) }))
-            .find(({ match }) => match !== null);
+            .find(({ line, match }) => match !== null &&
+            (line === entry.lines[0] || indentation(line.source) === entry.propertyIndent));
         if (mountPath?.match?.[1] === undefined)
             return [];
         return [{
@@ -287,60 +338,125 @@ function findVolumeMounts(lines) {
             }];
     });
 }
-function findVolumes(lines) {
-    return findNamedYamlEntries(lines, "volumes").map((entry) => ({
+function findVolumes(lines, sectionIndent) {
+    return findNamedYamlEntries(lines, "volumes", sectionIndent).map((entry) => ({
         line: entry.nameLine.line,
         name: entry.name,
         ...combineGuardStates([entry.section, entry.nameLine]),
     }));
 }
-function findNamedYamlEntries(lines, sectionName) {
+function findNamedYamlEntries(lines, sectionName, expectedIndent) {
     const entries = [];
     for (let sectionIndex = 0; sectionIndex < lines.length; sectionIndex += 1) {
         const section = lines[sectionIndex];
-        if (section === undefined || section.source.trim() !== `${sectionName}:`)
+        if (section === undefined ||
+            !section.activeYaml ||
+            section.source.trim() !== `${sectionName}:` ||
+            (expectedIndent !== undefined && indentation(section.source) !== expectedIndent)) {
             continue;
-        const sectionIndent = indentation(section.source);
-        let itemIndent;
-        let current;
-        const candidates = [];
-        for (let index = sectionIndex + 1; index < lines.length; index += 1) {
-            const line = lines[index];
-            if (line === undefined)
-                break;
-            const trimmed = line.source.trim();
-            if (trimmed === "" || trimmed.startsWith("#"))
-                continue;
-            if (indentation(line.source) <= sectionIndent)
-                break;
-            const lineIndent = indentation(line.source);
-            if (/^\s*-\s+/.test(line.source) && (itemIndent === undefined || lineIndent === itemIndent)) {
-                itemIndent ??= lineIndent;
-                current = { section, lines: [line] };
-                candidates.push(current);
-            }
-            else if (current !== undefined) {
-                current.lines.push(line);
-            }
         }
-        for (const candidate of candidates) {
+        for (const candidate of yamlListItems(lines, sectionIndex)) {
+            const first = candidate.lines[0];
+            const propertyIndent = indentation(first?.source ?? "") + 2;
             const named = candidate.lines
                 .map((line) => ({
                 line,
                 name: line.source.match(/^\s*(?:-\s*)?name:\s*["']?([A-Za-z0-9._-]+)["']?\s*(?:#.*)?$/)?.[1],
             }))
-                .find(({ name }) => name !== undefined);
+                .find(({ line, name }) => name !== undefined &&
+                (line === first || indentation(line.source) === propertyIndent));
             if (named?.name === undefined)
                 continue;
             entries.push({
-                section: candidate.section,
+                section,
                 name: named.name,
                 nameLine: named.line,
                 lines: candidate.lines,
+                propertyIndent,
             });
         }
     }
     return entries;
+}
+function findContainerScopes(lines, sectionIndex) {
+    return yamlListItems(lines, sectionIndex).map((item) => {
+        const itemIndent = indentation(item.lines[0]?.source ?? "");
+        const propertyIndent = itemIndent + 2;
+        const named = item.lines
+            .map((line) => ({
+            line,
+            name: line.source.match(/^\s*(?:-\s*)?name:\s*["']?([A-Za-z0-9._-]+)["']?\s*(?:#.*)?$/)?.[1],
+        }))
+            .find(({ line, name }) => name !== undefined &&
+            (line === item.lines[0] || indentation(line.source) === propertyIndent));
+        return {
+            name: named?.name ?? `container at line ${item.lines[0]?.line ?? 0}`,
+            item: item.lines[0] ?? lines[sectionIndex],
+            lines: item.lines,
+            propertyIndent,
+        };
+    });
+}
+function yamlListItems(lines, sectionIndex) {
+    const section = lines[sectionIndex];
+    if (section === undefined)
+        return [];
+    const sectionIndent = indentation(section.source);
+    let itemIndent;
+    let current;
+    const items = [];
+    for (let index = sectionIndex + 1; index < lines.length; index += 1) {
+        const line = lines[index];
+        if (line === undefined)
+            break;
+        const trimmed = line.source.trim();
+        if (!line.activeYaml || trimmed === "" || trimmed.startsWith("#"))
+            continue;
+        const lineIndent = indentation(line.source);
+        if (lineIndent <= sectionIndent)
+            break;
+        if (/^\s*-\s+/.test(line.source) && (itemIndent === undefined || lineIndent === itemIndent)) {
+            itemIndent ??= lineIndent;
+            current = { lines: [line] };
+            items.push(current);
+        }
+        else if (current !== undefined) {
+            current.lines.push(line);
+        }
+    }
+    return items;
+}
+function enclosingYamlBlock(lines, childIndex, childIndent) {
+    let start = 0;
+    let parentIndent = -1;
+    for (let index = childIndex - 1; index >= 0; index -= 1) {
+        const line = lines[index];
+        if (line === undefined ||
+            !line.activeYaml ||
+            line.source.trim().startsWith("#")) {
+            continue;
+        }
+        const lineIndent = indentation(line.source);
+        if (lineIndent < childIndent) {
+            start = index;
+            parentIndent = lineIndent;
+            break;
+        }
+    }
+    let end = lines.length;
+    for (let index = childIndex + 1; index < lines.length; index += 1) {
+        const line = lines[index];
+        if (line === undefined ||
+            !line.activeYaml ||
+            line.source.trim().startsWith("#")) {
+            continue;
+        }
+        if (indentation(line.source) <= parentIndent) {
+            end = index;
+            break;
+        }
+    }
+    return lines.slice(start, end);
 }
 function combineGuardStates(states) {
     const predicates = new Map();
@@ -354,6 +470,14 @@ function combineGuardStates(states) {
 }
 function indentation(source) {
     return source.match(/^[ \t]*/)?.[0].length ?? 0;
+}
+function isPodBearingDocument(lines) {
+    return lines.some((line) => {
+        if (!line.activeYaml || indentation(line.source) !== 0)
+            return false;
+        const kind = line.source.match(/^kind:\s*["']?([A-Za-z][A-Za-z0-9]*)["']?\s*(?:#.*)?$/)?.[1];
+        return kind !== undefined && POD_TEMPLATE_KINDS.has(kind);
+    });
 }
 function findSelectorLabelOverrides(rule, file) {
     const lines = file.source.split(/\r?\n/);

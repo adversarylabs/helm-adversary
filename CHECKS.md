@@ -59,10 +59,10 @@ Public grounding: Helm RBAC docs, [Prisma “wildcard use is not minimized in Ro
 
 | | |
 | --- | --- |
-| **What** | A static file-valued container argument can render when its matching named volume mount or backing volume is disabled by an additional Helm values condition |
-| **Why** | The process starts with a path argument for a file that is absent from its filesystem |
-| **Looks for** | A literal absolute path in a file/path/cert/key/config flag, an exact covering `mountPath`, a matching volume name, and a provable positive-condition mismatch in the same rendered YAML document |
-| **Stays quiet when** | The argument, mount, and volume share the same conditions; the mount is unconditional; names or paths do not match; or complex template flow prevents proving availability |
+| **What** | A static file-valued item under a container's `args` or `command` can render when that same container's matching named volume mount or the pod's backing volume is disabled by an additional Helm values condition |
+| **Why** | The rendered container references a path while its matching declared mount is unavailable on that values path; if nothing else supplies the file, startup can fail |
+| **Looks for** | An active argument-list item with a literal absolute path, an exact covering `mountPath` on the same container, a matching pod volume name, and a provable positive-condition mismatch |
+| **Stays quiet when** | Flag-like text appears in comments, annotations, ConfigMap data, or other strings; only another container has the mount; the argument, mount, and volume share compatible conditions; or complex template flow prevents proving availability |
 | **Remediation** | Share one requirement across the argument, volumeMount, and volume, or make the mount available whenever the argument renders |
 
 ### `helm.latest-default`

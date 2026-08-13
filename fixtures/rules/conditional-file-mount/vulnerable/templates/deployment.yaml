@@ -19,9 +19,12 @@ spec:
               name: trust-bundle
               readOnly: true
           {{- end }}
-      {{- if .Values.webhook.enabled }}
+        - name: metrics-sidecar
+          image: example/metrics:1.2.3
+          volumeMounts:
+            - name: trust-bundle
+              mountPath: /var/run/trust-bundle
       volumes:
         - name: trust-bundle
           secret:
             secretName: fixture-trust
-      {{- end }}

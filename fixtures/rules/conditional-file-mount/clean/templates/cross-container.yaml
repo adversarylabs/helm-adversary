@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cross-container
+spec:
+  template:
+    spec:
+      containers:
+        - name: controller
+          image: example/controller:1.2.3
+          args:
+            {{- if .Values.replication.enabled }}
+            - --peer-ca-file=/var/run/shared-trust/ca.pem
+            {{- end }}
+        - name: sidecar
+          image: example/sidecar:1.2.3
+          {{- if .Values.webhook.enabled }}
+          volumeMounts:
+            - name: shared-trust
+              mountPath: /var/run/shared-trust
+          {{- end }}
+      volumes:
+        - name: shared-trust
+          secret:
+            secretName: fixture-shared-trust

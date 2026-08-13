@@ -304,13 +304,13 @@ export declare const spec: {
         };
     }, {
         readonly id: "helm.conditional-file-mount";
-        readonly title: "File argument can render without its mounted file";
-        readonly summary: "A container file argument is available under broader values than its matching volume mount";
+        readonly title: "File argument can outlive its declared volume mount";
+        readonly summary: "A container references a file path on a render path where its matching declared volumeMount is unavailable";
         readonly category: "correctness";
         readonly severity: "high";
         readonly confidence: "high";
-        readonly whyItMatters: "Helm can render the file-valued argument while omitting the volume mount or backing volume that provides that path.";
-        readonly impact: "The container can fail at startup when it tries to open a file that was not mounted.";
+        readonly whyItMatters: "The template can render the file-valued argument while omitting the matching declared volumeMount or backing volume on the same values path.";
+        readonly impact: "If the image or another runtime mechanism does not provide that path, the process can fail when it tries to open the referenced file.";
         readonly recommendation: "Gate the argument, matching volumeMount, and backing volume with the same requirement, or make the mount available whenever the argument renders.";
         readonly complexity: "small";
         readonly tags: ["helm", "kubernetes", "volumes", "templates", "correctness"];

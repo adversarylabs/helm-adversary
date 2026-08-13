@@ -341,13 +341,13 @@ export const spec = {
         },
         {
             "id": "helm.conditional-file-mount",
-            "title": "File argument can render without its mounted file",
-            "summary": "A container file argument is available under broader values than its matching volume mount",
+            "title": "File argument can outlive its declared volume mount",
+            "summary": "A container references a file path on a render path where its matching declared volumeMount is unavailable",
             "category": "correctness",
             "severity": "high",
             "confidence": "high",
-            "whyItMatters": "Helm can render the file-valued argument while omitting the volume mount or backing volume that provides that path.",
-            "impact": "The container can fail at startup when it tries to open a file that was not mounted.",
+            "whyItMatters": "The template can render the file-valued argument while omitting the matching declared volumeMount or backing volume on the same values path.",
+            "impact": "If the image or another runtime mechanism does not provide that path, the process can fail when it tries to open the referenced file.",
             "recommendation": "Gate the argument, matching volumeMount, and backing volume with the same requirement, or make the mount available whenever the argument renders.",
             "complexity": "small",
             "tags": [

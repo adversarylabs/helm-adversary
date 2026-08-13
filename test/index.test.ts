@@ -53,20 +53,33 @@ test("anchors unsafe custom labels at the selector helper", async () => {
   ]);
 });
 
-test("explains the mismatched guard for a conditionally unavailable file mount", async () => {
+test("keeps mounts container-local while pod volumes remain shared", async () => {
   const output = await review("rules/conditional-file-mount/vulnerable", true);
-  const observation = output.rawObservations?.find(
+  const observations = output.rawObservations?.filter(
     (item) => item.ruleId === "helm.conditional-file-mount",
   );
+  assert.equal(observations?.length, 1);
+  const observation = observations?.[0];
   assert.equal(observation?.location?.file, "templates/deployment.yaml");
   assert.equal(observation?.location?.line, 14);
   assert.deepEqual(observation?.evidence, {
-    label: "File argument can render without its mounted file",
+    label: "File argument can outlive its declared volume mount",
     argumentPath: "/var/run/trust-bundle/ca.pem",
+    container: "controller",
     volumeMount: "trust-bundle",
     mountPath: "/var/run/trust-bundle",
     unavailableWhen: ".Values.webhook.enabled",
   });
+});
+
+test("keeps file-looking text and cross-container mounts quiet", async () => {
+  const output = await review("rules/conditional-file-mount/clean", true);
+  assert.equal(
+    output.rawObservations?.some(
+      (item) => item.ruleId === "helm.conditional-file-mount",
+    ),
+    false,
+  );
 });
 
 test("output ordering and protocol envelope are deterministic", async () => {
