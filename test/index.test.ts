@@ -89,5 +89,5 @@ test("output ordering and protocol envelope are deterministic", async () => {
   const envelope = JSON.parse(JSON.stringify(createAdversaryRunEnvelope(first)));
   assert.equal(envelope.protocolVersion, 1);
   assert.equal(envelope.result.adversary.name, "helm");
-  assert.equal(envelope.result.adversary.version, "0.0.13");
+  assert.equal(envelope.result.adversary.version, "0.0.15");
 });
